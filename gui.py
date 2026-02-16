@@ -1,4 +1,5 @@
-import tkinter as tk
+import customtkinter as ctk
+import tkinter as tk  # 一部標準機能用
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
@@ -7,8 +8,31 @@ import datetime as dt
 import threading
 import traceback
 
+# データ取得モジュールのインポート（変更なし）
 import tokyodome_eventdata
 import train_troubledata
+
+# --- テーマとカラー設定 ---
+ctk.set_appearance_mode("dark")  # ダークモード設定
+ctk.set_default_color_theme("blue")  # アクセントカラー
+
+# カラーパレット定義
+COLOR_BG = "#1A1A1A"            # 背景色
+COLOR_FRAME = "#2B2B2B"         # フレーム背景色
+COLOR_TEXT_MAIN = "#FFFFFF"     # メインテキスト色
+COLOR_TEXT_SUB = "#AAAAAA"      # サブテキスト色
+COLOR_ACCENT_RED = "#FF5555"    # 強調色（赤）
+COLOR_ACCENT_GREEN = "#55FF55"  # 強調色（緑）
+
+# フォント設定（モダンなフォントを指定）
+FONT_MAIN = ("Meiryo UI", 12)
+FONT_TIME = ("Meiryo UI", 100, "bold")
+FONT_DATE = ("Meiryo UI", 24)
+FONT_EVENT_TITLE = ("Meiryo UI", 16, "bold")
+FONT_EVENT_NAME = ("Meiryo UI", 32, "bold")
+FONT_TRAIN_TITLE = ("Meiryo UI", 18, "bold")
+FONT_TRAIN_INFO = ("Meiryo UI", 14)
+FONT_STATUS = ("Meiryo UI", 10)
 
 jst = ZoneInfo("Asia/Tokyo")
 current_time = datetime.now(jst)
@@ -16,271 +40,255 @@ current_time = datetime.now(jst)
 # グローバル変数の管理
 counter = 0
 status_label = None
-status_bar = None
 eventdata = []
 traindata = []
 
 # ウィジェット参照保持用
-current_event_frame = None
-current_train_frame = None
+datetime_frame_ref = None
+current_event_frame_ref = None
+current_train_scroll_frame_ref = None
 
-# フォントサイズの管理
-time_fontsize = 200
-date_fontsize = 40
-event_kind_fontsize = 40
-event_name_fontsize = 25
-event_time_fontsize = 40
-train_kind_fontsize = 40
-train_data_fontsize = 15
-train_delay_fontsize = 15
-
-# --- 修正: データディレクトリとファイルパスの管理 ---
+# データディレクトリとファイルパスの管理（変更なし）
 DATA_DIR = "data"
 event_file_path = os.path.join(DATA_DIR, "event_data.json")
 train_file_path = os.path.join(DATA_DIR, "train_data.json")
 
-# 曜日リスト（ロケール依存を回避するため手動設定）
+# 曜日リスト
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 
-# メニューバーの作成
-def menubar():
-    menu = tk.Menu(root)
-    all_menu = tk.Menu(menu, tearoff = 0)
-    menu.add_cascade(label = "≡", menu = all_menu)
-    all_menu.add_command(label = "終了", command = root.destroy)
-    root.config(menu = menu)
+# --- GUIコンポーネント構築関数 ---
 
-# 下部バーの作成
-def statusbar():
-    global counter, status_label, status_bar
-    status_bar = tk.Frame(root, relief = tk.SUNKEN, bd = 1)
-    status_bar.pack(side = tk.BOTTOM, fill = tk.X)
-    status_label = tk.Label(status_bar, text = f"ステータス : {counter}秒経過", anchor = "w")
-    status_label.pack(side = tk.LEFT, padx = 10)
-    destroy_button = tk.Button(status_bar, text = "終了", command = root.destroy)
-    destroy_button.pack(side = tk.RIGHT, padx = 10)
+def setup_gui_layout():
+    """メインウィンドウのグリッドレイアウトを設定"""
+    # 左側（電車情報）:右側（日時・イベント） = 1:2 の比率
+    root.grid_columnconfigure(0, weight=1, minsize=400)
+    root.grid_columnconfigure(1, weight=2)
+    # 上段（日時）:中段（イベント）:下段（ステータス）
+    root.grid_rowconfigure(0, weight=1, minsize=200)
+    root.grid_rowconfigure(1, weight=2)
+    root.grid_rowconfigure(2, weight=0, minsize=40)
 
-def status_front():
-    global status_bar
-    if status_bar:
-        status_bar.tkraise()
+def create_statusbar():
+    """ステータスバーと終了ボタンを作成"""
+    global counter, status_label
+    
+    status_frame = ctk.CTkFrame(root, corner_radius=0, fg_color=COLOR_FRAME, height=40)
+    status_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+    
+    status_label = ctk.CTkLabel(status_frame, text=f"ステータス : 起動中...", font=FONT_STATUS, text_color=COLOR_TEXT_SUB)
+    status_label.pack(side=tk.LEFT, padx=20)
+    
+    # スタイリッシュな終了ボタン
+    destroy_button = ctk.CTkButton(status_frame, text="終了", command=root.destroy, 
+                                     fg_color=COLOR_ACCENT_RED, hover_color="#CC4444", 
+                                     width=80, height=30, font=FONT_STATUS)
+    destroy_button.pack(side=tk.RIGHT, padx=20, pady=5)
 
-def update_status():
-    global counter, status_label, current_time, time, date
+def update_time_and_status_logic():
+    """時刻とステータスの更新ロジック"""
+    global counter, status_label, current_time, datetime_frame_ref
     
     counter += 1
-    status_label.config(text = f"ステータス : {counter}秒経過")
+    status_label.configure(text=f"システム稼働時間 : {counter} 秒経過")
     
     current_time = datetime.now(jst)
-    
-    # --- 修正: 曜日の取得ロジックを変更 ---
     time_str = current_time.strftime("%H:%M:%S")
-    # weekday()は 0=月, 6=日 を返す
     w_idx = current_time.weekday()
-    date_str = f"{current_time.strftime('%Y年%m月%d日')}（{WEEKDAYS[w_idx]}）"
+    date_str = f"{current_time.strftime('%Y.%m.%d')} ({WEEKDAYS[w_idx]})"
     
-    time.config(text = time_str)
-    date.config(text = date_str)
-    
-    root.after(1000, update_status)
+    # DateTimeフレーム内のラベルを更新
+    if datetime_frame_ref:
+        for widget in datetime_frame_ref.winfo_children():
+            if isinstance(widget, ctk.CTkLabel):
+                if widget.cget("font") == FONT_TIME:
+                    widget.configure(text=time_str)
+                elif widget.cget("font") == FONT_DATE:
+                    widget.configure(text=date_str)
 
-def date_time_status():
-    global time, date
-    time_frame = tk.Frame(root, bd = 1, relief = "solid")
-    time_frame.place(
-        relx = 1/3,
-        rely = 0,
-        relwidth = 2/3,
-        relheight = 1/2
-    )
-    time = tk.Label(
-        time_frame,
-        text = f"{current_time.strftime('%H:%M:%S')}",
-        font = ("Yu Gothic UI", time_fontsize))
-    time.place(relx = 0.5, rely = 0.5, anchor = "center")
-    
-    # --- 修正: 初回表示の曜日ロジックも変更 ---
+    root.after(1000, update_time_and_status_logic)
+
+def create_datetime_frame():
+    """日時表示フレームを作成"""
+    global datetime_frame_ref
+    datetime_frame = ctk.CTkFrame(root, corner_radius=15, fg_color=COLOR_FRAME)
+    datetime_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=(20, 10))
+    datetime_frame_ref = datetime_frame
+
+    # 初期表示用の日時文字列
     w_idx = current_time.weekday()
-    initial_date_str = f"{current_time.strftime('%Y年%m月%d日')}（{WEEKDAYS[w_idx]}）"
-
-    date = tk.Label(
-        time_frame,
-        text = initial_date_str,
-        font = ("Yu Gothic UI", date_fontsize)
-    )
-    date.pack(anchor = "nw", padx = 20, pady = 10)
+    date_str = f"{current_time.strftime('%Y.%m.%d')} ({WEEKDAYS[w_idx]})"
+    time_str = current_time.strftime("%H:%M:%S")
+    
+    time_label = ctk.CTkLabel(datetime_frame, text=time_str, font=FONT_TIME, text_color=COLOR_TEXT_MAIN)
+    time_label.place(relx=0.5, rely=0.45, anchor="center")
+    
+    date_label = ctk.CTkLabel(datetime_frame, text=date_str, font=FONT_DATE, text_color=COLOR_TEXT_SUB)
+    date_label.place(relx=0.5, rely=0.8, anchor="center")
 
 def read_eventdata():
     global eventdata
     try:
         if not os.path.exists(event_file_path):
+            eventdata = []
             return
-        
-        with open(event_file_path, "r", encoding = "utf-8") as f:
+        with open(event_file_path, "r", encoding="utf-8") as f:
             eventdata = json.load(f)
     except Exception:
         print("イベントデータの読み込みに失敗しました。")
         traceback.print_exc()
+        eventdata = []
 
-def current_event_status():
-    global eventdata, current_event_frame
+def update_event_ui():
+    """イベント情報UIを更新"""
+    global eventdata, current_event_frame_ref
     
-    if current_event_frame is not None:
-        current_event_frame.destroy()
+    # フレームの再作成（内部のクリアのため）
+    if current_event_frame_ref is not None:
+        current_event_frame_ref.destroy()
 
+    # 新しいフレームを作成
+    event_frame = ctk.CTkFrame(root, corner_radius=15, fg_color=COLOR_FRAME)
+    event_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=(10, 20))
+    current_event_frame_ref = event_frame
+
+    # 最終更新時刻の取得
     formatted_event_time = "不明"
     try:
         if os.path.exists(event_file_path):
             event_time_timestamp = os.path.getmtime(event_file_path)
             event_time_dt = dt.datetime.fromtimestamp(event_time_timestamp)
-            formatted_event_time = event_time_dt.strftime('%m/%d %H:%M:%S')
+            formatted_event_time = event_time_dt.strftime('%m/%d %H:%M')
     except Exception:
         pass
 
-    current_event_frame = tk.Frame(root, bd = 1, relief = "solid")
-    current_event_frame.place(
-        relx = 1/3,
-        rely = 1/2,
-        relwidth = 2/3,
-        relheight = 1/2
-    )
-
-    event_kind = ""
+    # データの解析
+    event_kind = "-"
     event_name = "データなし"
-    event_time = ""
-    local_event_name_fontsize = event_name_fontsize
+    event_time = "-"
+    name_text_color = COLOR_TEXT_MAIN
 
     try:
         day_index = current_time.day - 1
-        
         if eventdata and 0 <= day_index < len(eventdata):
             day_data = eventdata[day_index]
-            
             if len(day_data) <= 3:
-                event_name = "予定なし"
-                local_event_name_fontsize = 70
-            elif len(day_data) == 4:
-                pass
-            elif len(day_data) == 5:
+                event_name = "本日の予定はありません"
+                name_text_color = COLOR_TEXT_SUB
+            elif len(day_data) >= 5:
                 event_kind = f"{day_data[3]}"
                 event_name = f"{day_data[4]}"
-                event_time = "時間情報なし"
-            elif len(day_data) >= 6:
-                event_kind = f"{day_data[3]}"
-                event_name = f"{day_data[4]}"
-                event_time = f"{day_data[5]}"
+                if len(day_data) >= 6:
+                    event_time = f"{day_data[5]}"
+                else:
+                    event_time = "時間情報なし"
+        else:
+             event_name = "データ取得中または予定なし"
+             name_text_color = COLOR_TEXT_SUB
     except Exception:
         event_name = "データ読込エラー"
+        name_text_color = COLOR_ACCENT_RED
         traceback.print_exc()
     
-    current_event_name = tk.Label(
-        current_event_frame,
-        text = event_name,
-        font = ("Yu Gothic UI", local_event_name_fontsize)
-    )
-    current_event_name.place(relx = 0.5, rely = 0.45, anchor = "center")
+    # UIパーツの配置
+    title_label = ctk.CTkLabel(event_frame, text="TOKYO DOME EVENT", font=FONT_EVENT_TITLE, text_color=COLOR_TEXT_SUB)
+    title_label.pack(anchor="nw", padx=20, pady=(20, 0))
+
+    kind_label = ctk.CTkLabel(event_frame, text=event_kind, font=("Meiryo UI", 20), text_color=COLOR_ACCENT_GREEN)
+    kind_label.pack(anchor="w", padx=20, pady=(10, 0))
+
+    name_label = ctk.CTkLabel(event_frame, text=event_name, font=FONT_EVENT_NAME, text_color=name_text_color, wraplength=600)
+    name_label.pack(anchor="w", padx=20, pady=(10, 20))
     
-    current_event_kind = tk.Label(
-        current_event_frame,
-        text = f"本日のイベント : {event_kind}",
-        font = ("Yu Gothic UI", event_kind_fontsize)
-    )
-    current_event_kind.place(relx = 0.01, rely = 0.01, anchor = "nw")
+    time_label = ctk.CTkLabel(event_frame, text=f"OPEN/START: {event_time}", font=("Meiryo UI", 18), text_color=COLOR_TEXT_MAIN)
+    time_label.pack(anchor="w", padx=20, pady=(0, 10))
     
-    event_update_data = tk.Label(
-        current_event_frame,
-        text = f"最終更新 : {formatted_event_time}",
-        font = ("Yu Gothic UI", 20)
-    )
-    event_update_data.place(relx = 0.99, rely = 0.01, anchor = "ne")
-    
-    current_event_time_label = tk.Label(
-        current_event_frame,
-        text = f"{event_time}",
-        font = ("Yu Gothic UI", event_time_fontsize)
-    )
-    current_event_time_label.place(relx = 0.5, rely = 0.75, anchor = "center")
-    
-    status_front()
+    update_label = ctk.CTkLabel(event_frame, text=f"最終更新 : {formatted_event_time}", font=FONT_STATUS, text_color=COLOR_TEXT_SUB)
+    update_label.pack(side=tk.BOTTOM, anchor="se", padx=20, pady=15)
+
 
 def read_traindata():
     global traindata
     try:
         if not os.path.exists(train_file_path):
+            traindata = []
             return
-        
-        with open(train_file_path, "r", encoding = "utf-8") as f:
+        with open(train_file_path, "r", encoding="utf-8") as f:
             traindata = json.load(f)
     except Exception:
         print("電車データの読み込みに失敗しました。")
         traceback.print_exc()
+        traindata = []
 
-def current_train_status():
-    global traindata, current_train_frame
+def update_train_ui():
+    """電車運行情報UIを更新"""
+    global traindata, current_train_scroll_frame_ref
     
-    if current_train_frame is not None:
-        current_train_frame.destroy()
+    # フレームの再作成
+    if current_train_scroll_frame_ref is not None:
+        current_train_scroll_frame_ref.destroy()
+    
+    # 親フレーム（タイトルとスクロールエリアを格納）
+    train_parent_frame = ctk.CTkFrame(root, corner_radius=15, fg_color=COLOR_FRAME)
+    train_parent_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(20, 10), pady=20)
+    
+    # タイトル
+    title_label = ctk.CTkLabel(train_parent_frame, text="首都圏の運行情報", font=FONT_TRAIN_TITLE, text_color=COLOR_TEXT_MAIN)
+    title_label.pack(anchor="nw", padx=20, pady=(20, 10))
 
+    # スクロール可能なフレームを作成
+    scroll_frame = ctk.CTkScrollableFrame(train_parent_frame, corner_radius=10, fg_color="transparent")
+    scroll_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+    current_train_scroll_frame_ref = train_parent_frame # 参照を保持するのは親フレーム
+
+    # 最終更新時刻
     formatted_train_time = "不明"
     try:
         if os.path.exists(train_file_path):
             train_time_timestamp = os.path.getmtime(train_file_path)
             train_time_dt = dt.datetime.fromtimestamp(train_time_timestamp)
-            formatted_train_time = train_time_dt.strftime('%m/%d %H:%M:%S')
+            formatted_train_time = train_time_dt.strftime('%m/%d %H:%M')
     except Exception:
         pass
-    
-    current_train_frame = tk.Frame(root, bd = 1, relief = "solid")
-    current_train_frame.place(
-        relx = 0,
-        rely = 0,
-        relwidth = 1/3,
-        relheight = 1
-    )
-    current_train = tk.Label(
-        current_train_frame,
-        text = "現在の運行情報",
-        font = ("Yu Gothic UI", train_kind_fontsize)
-    )
-    current_train.pack(anchor = "nw", padx = 20, pady = 10)
-    
+
+    # データ表示
     if traindata:
         for item in traindata:
             line = item.get("路線", "不明")
             status = item.get("状況", "不明")
             detail = item.get("詳細", "")
             
-            train_delay = tk.Label(
-                current_train_frame,
-                text = f"・{line} : {status}",
-                font = ("Yu Gothic UI", train_data_fontsize)
-            )
-            train_delay.pack(anchor = "nw", padx = 20, pady = 10)
+            # 状況に応じて色を変える（視認性向上）
+            status_color = COLOR_ACCENT_RED if "平常" not in status and "不明" not in status else COLOR_TEXT_MAIN
             
-            train_detail = tk.Label(
-                current_train_frame,
-                text = f"{detail}",
-                font = ("Yu Gothic UI", train_delay_fontsize),
-                wraplength=400,
-                justify="left"
-            )
-            train_detail.pack(anchor = "nw", padx = 60, pady = 0)
-    else:
-        no_info = tk.Label(
-            current_train_frame,
-            text = "現在、遅延情報はありません\nまたはデータ取得中です",
-            font = ("Yu Gothic UI", train_data_fontsize)
-        )
-        no_info.pack(anchor = "nw", padx = 20, pady = 20)
+            # 各路線の情報カード
+            card = ctk.CTkFrame(scroll_frame, corner_radius=8, fg_color="#333333", border_width=1, border_color="#444444")
+            card.pack(fill=tk.X, pady=5, padx=5)
+            
+            header = ctk.CTkLabel(card, text=f"● {line}", font=FONT_TRAIN_INFO, text_color=COLOR_TEXT_MAIN, anchor="w")
+            header.pack(fill=tk.X, padx=10, pady=(10, 0))
+            
+            status_lbl = ctk.CTkLabel(card, text=f"状況: {status}", font=("Meiryo UI", 14, "bold"), text_color=status_color, anchor="w")
+            status_lbl.pack(fill=tk.X, padx=10, pady=(5, 0))
+            
+            detail_lbl = ctk.CTkLabel(card, text=detail, font=("Meiryo UI", 12), text_color=COLOR_TEXT_SUB, wraplength=350, anchor="w", justify="left")
+            detail_lbl.pack(fill=tk.X, padx=10, pady=(5, 10))
 
-    train_update_data = tk.Label(
-        current_train_frame,
-        text = f"最終更新 : {formatted_train_time}",
-        font = ("Yu Gothic UI", 20)
-    )
-    train_update_data.pack(anchor = "nw", side = tk.BOTTOM, padx = 20, pady = 25)
-    
-    status_front()
+    else:
+        no_info = ctk.CTkLabel(
+            scroll_frame,
+            text="現在、主要な遅延情報はありません\nまたはデータを取得中です...",
+            font=FONT_TRAIN_INFO,
+            text_color=COLOR_TEXT_SUB,
+            anchor="center"
+        )
+        no_info.pack(pady=50)
+
+    update_label = ctk.CTkLabel(train_parent_frame, text=f"最終更新 : {formatted_train_time}", font=FONT_STATUS, text_color=COLOR_TEXT_SUB)
+    update_label.pack(side=tk.BOTTOM, anchor="sw", padx=20, pady=15)
+
+
+# --- スレッド処理（変更なし） ---
+# ロジック部分は既存のコードをそのまま流用します
 
 def run_train_scraping_thread():
     try:
@@ -291,7 +299,7 @@ def run_train_scraping_thread():
 
 def after_train_scraping():
     read_traindata()
-    current_train_status()
+    update_train_ui() # UI更新関数名を変更
     root.after(600000, start_train_update_cycle)
 
 def start_train_update_cycle():
@@ -308,7 +316,7 @@ def run_event_scraping_thread():
 
 def after_event_scraping():
     read_eventdata()
-    current_event_status()
+    update_event_ui() # UI更新関数名を変更
     root.after(3600000, start_event_update_cycle)
 
 def start_event_update_cycle():
@@ -316,21 +324,34 @@ def start_event_update_cycle():
     scraping_thread.daemon = True
     scraping_thread.start()
 
-root = tk.Tk()
-root.title("TokyoDome Event Info")
-root.geometry("1600x900")
+# --- メイン処理 ---
 
-menubar()
-statusbar()
-date_time_status()
-update_status()
+# ルートウィンドウの作成（tk.Tkの代わりにctk.CTkを使用）
+root = ctk.CTk()
+root.title("Tokyo Dome Info Board")
+# ウィンドウサイズを少し小さく固定して密度感を出す（レイアウト崩れ防止）
+root.geometry("1280x720")
+root.resizable(False, False)
 
+# レイアウト設定
+setup_gui_layout()
+
+# 各UIコンポーネントの作成と配置
+create_statusbar()
+create_datetime_frame()
+
+# 初期データの読み込みと表示
 read_eventdata()
-current_event_status()
+update_event_ui()
 read_traindata()
-current_train_status()
+update_train_ui()
 
+# 時計更新の開始
+update_time_and_status_logic()
+
+# バックグラウンド更新の開始
 root.after(1000, start_event_update_cycle)
 root.after(1000, start_train_update_cycle)
 
+# ループ開始
 root.mainloop()
