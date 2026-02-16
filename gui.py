@@ -1,25 +1,14 @@
 import tkinter as tk
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import locale
 import json
 import os
 import datetime as dt
 import threading
 import traceback
 
-# 修正: インポート時に実行されないように関数のみインポート、またはモジュールとして扱う
 import tokyodome_eventdata
 import train_troubledata
-
-# ロケール設定（Windows環境などでエラーが出る場合の対策としてtry-exceptを追加）
-try:
-    locale.setlocale(locale.LC_TIME, "ja_JP.UTF-8")
-except locale.Error:
-    try:
-        locale.setlocale(locale.LC_TIME, "ja")
-    except locale.Error:
-        print("ロケール設定に失敗しました。デフォルトを使用します。")
 
 jst = ZoneInfo("Asia/Tokyo")
 current_time = datetime.now(jst)
@@ -31,7 +20,7 @@ status_bar = None
 eventdata = []
 traindata = []
 
-# ウィジェット参照保持用（メモリリーク対策）
+# ウィジェット参照保持用
 current_event_frame = None
 current_train_frame = None
 
@@ -45,9 +34,13 @@ train_kind_fontsize = 40
 train_data_fontsize = 15
 train_delay_fontsize = 15
 
-# ファイルパスの管理
-event_file_path = "event_data.json"
-train_file_path = "train_data.json"
+# --- 修正: データディレクトリとファイルパスの管理 ---
+DATA_DIR = "data"
+event_file_path = os.path.join(DATA_DIR, "event_data.json")
+train_file_path = os.path.join(DATA_DIR, "train_data.json")
+
+# 曜日リスト（ロケール依存を回避するため手動設定）
+WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 
 # メニューバーの作成
 def menubar():
@@ -75,15 +68,16 @@ def status_front():
 def update_status():
     global counter, status_label, current_time, time, date
     
-    # 時間経過のインクリメント
     counter += 1
     status_label.config(text = f"ステータス : {counter}秒経過")
     
     current_time = datetime.now(jst)
     
-    # 書式設定（ロケールエラー回避のためtryなしで標準的な書き方に統一しても良いが、元の意図を尊重）
+    # --- 修正: 曜日の取得ロジックを変更 ---
     time_str = current_time.strftime("%H:%M:%S")
-    date_str = current_time.strftime("%Y年%m月%d日（%a）")
+    # weekday()は 0=月, 6=日 を返す
+    w_idx = current_time.weekday()
+    date_str = f"{current_time.strftime('%Y年%m月%d日')}（{WEEKDAYS[w_idx]}）"
     
     time.config(text = time_str)
     date.config(text = date_str)
@@ -105,9 +99,13 @@ def date_time_status():
         font = ("Yu Gothic UI", time_fontsize))
     time.place(relx = 0.5, rely = 0.5, anchor = "center")
     
+    # --- 修正: 初回表示の曜日ロジックも変更 ---
+    w_idx = current_time.weekday()
+    initial_date_str = f"{current_time.strftime('%Y年%m月%d日')}（{WEEKDAYS[w_idx]}）"
+
     date = tk.Label(
         time_frame,
-        text = f"{current_time.strftime('%Y年%m月%d日（%a）')}",
+        text = initial_date_str,
         font = ("Yu Gothic UI", date_fontsize)
     )
     date.pack(anchor = "nw", padx = 20, pady = 10)
@@ -127,7 +125,6 @@ def read_eventdata():
 def current_event_status():
     global eventdata, current_event_frame
     
-    # 修正1: メモリリーク対策。古いフレームがあれば破棄してから作成する。
     if current_event_frame is not None:
         current_event_frame.destroy()
 
@@ -148,14 +145,12 @@ def current_event_status():
         relheight = 1/2
     )
 
-    # デフォルト値
     event_kind = ""
     event_name = "データなし"
     event_time = ""
     local_event_name_fontsize = event_name_fontsize
 
     try:
-        # 日付インデックスの安全な取得
         day_index = current_time.day - 1
         
         if eventdata and 0 <= day_index < len(eventdata):
@@ -165,7 +160,6 @@ def current_event_status():
                 event_name = "予定なし"
                 local_event_name_fontsize = 70
             elif len(day_data) == 4:
-                # データの長さが4の場合のロジック（元コード準拠）
                 pass
             elif len(day_data) == 5:
                 event_kind = f"{day_data[3]}"
@@ -224,7 +218,6 @@ def read_traindata():
 def current_train_status():
     global traindata, current_train_frame
     
-    # 修正1: メモリリーク対策。古いフレームを破棄。
     if current_train_frame is not None:
         current_train_frame.destroy()
 
@@ -251,10 +244,8 @@ def current_train_status():
     )
     current_train.pack(anchor = "nw", padx = 20, pady = 10)
     
-    # データ表示部分
     if traindata:
         for item in traindata:
-            # 辞書キーの存在確認を行い安全にアクセス
             line = item.get("路線", "不明")
             status = item.get("状況", "不明")
             detail = item.get("詳細", "")
@@ -270,12 +261,11 @@ def current_train_status():
                 current_train_frame,
                 text = f"{detail}",
                 font = ("Yu Gothic UI", train_delay_fontsize),
-                wraplength=400, # 長文の折り返し設定を追加
+                wraplength=400,
                 justify="left"
             )
             train_detail.pack(anchor = "nw", padx = 60, pady = 0)
     else:
-        # データがない、または空の場合の表示
         no_info = tk.Label(
             current_train_frame,
             text = "現在、遅延情報はありません\nまたはデータ取得中です",
@@ -292,32 +282,24 @@ def current_train_status():
     
     status_front()
 
-# --- スレッド処理の修正 ---
-
 def run_train_scraping_thread():
-    """電車情報のスクレイピングを別スレッドで実行"""
     try:
         train_troubledata.main()
     except Exception:
         print("電車情報の更新スレッドでエラーが発生しました。")
-    # 完了後、メインスレッドでGUI更新をスケジュール
     root.after(0, after_train_scraping)
 
 def after_train_scraping():
-    """スクレイピング完了後のGUI更新処理"""
     read_traindata()
     current_train_status()
-    # 次回の実行を予約 (10分後)
     root.after(600000, start_train_update_cycle)
 
 def start_train_update_cycle():
-    """電車情報更新サイクルの開始"""
     scraping_thread = threading.Thread(target=run_train_scraping_thread)
     scraping_thread.daemon = True 
     scraping_thread.start()
 
 def run_event_scraping_thread():
-    """イベント情報のスクレイピングを別スレッドで実行（初回用）"""
     try:
         tokyodome_eventdata.fetch_event_data()
     except Exception:
@@ -327,8 +309,6 @@ def run_event_scraping_thread():
 def after_event_scraping():
     read_eventdata()
     current_event_status()
-    # イベント情報は1日に何度も変わるものではないので、自動更新は低頻度または起動時のみでも可
-    # ここでは1時間ごとの更新にしておく
     root.after(3600000, start_event_update_cycle)
 
 def start_event_update_cycle():
@@ -336,29 +316,21 @@ def start_event_update_cycle():
     scraping_thread.daemon = True
     scraping_thread.start()
 
-# --- メイン処理 ---
-
-# rootウィンドウの作成
 root = tk.Tk()
-root.title("F××k TokyoDome Event")
+root.title("TokyoDome Event Info")
 root.geometry("1600x900")
 
-# 要素の配置
 menubar()
 statusbar()
 date_time_status()
 update_status()
 
-# 初期データの読み込みと表示（ファイルがあれば）
 read_eventdata()
 current_event_status()
 read_traindata()
 current_train_status()
 
-# バックグラウンド更新の開始
-# 修正2: 起動直後にGUIをフリーズさせないよう、スレッドで開始
 root.after(1000, start_event_update_cycle)
 root.after(1000, start_train_update_cycle)
 
-# ループ
 root.mainloop()

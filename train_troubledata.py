@@ -14,21 +14,16 @@ def main():
     driver = None
 
     try:
-        # ブラウザを起動
         options = Options()
         options.add_argument("--headless")
-        options.add_argument("--disable-gpu") # エラー回避用
+        options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
-        
-        # ログ出力を抑制
         options.add_argument("--log-level=3")
         
         driver = webdriver.Chrome(options=options) 
 
-        # Yahoo!路線情報の関東エリアのページを開く
         driver.get("https://transit.yahoo.co.jp/diainfo/area/4")
         
-        # 待機時間を設定
         wait = WebDriverWait(driver, 10)
         
         try:
@@ -59,7 +54,6 @@ def main():
         traceback.print_exc()
 
     finally:
-        # ブラウザを確実に閉じる
         if driver:
             try:
                 driver.quit()
@@ -67,16 +61,20 @@ def main():
             except Exception:
                 pass
 
-    # --- Atomic Write (安全な書き込み) ---
+    # --- 修正: データ保存先を data ディレクトリに変更 ---
     try:
-        temp_file = "train_data.json.tmp"
-        final_file = "train_data.json"
+        DATA_DIR = "data"
+        # ディレクトリが存在しない場合は作成
+        os.makedirs(DATA_DIR, exist_ok=True)
+
+        temp_file = os.path.join(DATA_DIR, "train_data.json.tmp")
+        final_file = os.path.join(DATA_DIR, "train_data.json")
 
         with open(temp_file, 'w', encoding='utf-8') as f:
             json.dump(all_train_data, f, ensure_ascii=False, indent=4)
         
         os.replace(temp_file, final_file)
-        print("電車運行情報の保存が完了しました。")
+        print(f"電車運行情報の保存が完了しました。保存先: {final_file}")
         
     except Exception:
         print("エラー: ファイルの保存に失敗しました。")
