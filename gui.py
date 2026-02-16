@@ -1,5 +1,6 @@
 import customtkinter as ctk
-import tkinter as tk  # 一部標準機能用
+import tkinter as tk
+import webbrowser  # URLを開くために追加
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
@@ -8,23 +9,28 @@ import datetime as dt
 import threading
 import traceback
 
-# データ取得モジュールのインポート（変更なし）
+# データ取得モジュールのインポート
 import tokyodome_eventdata
 import train_troubledata
 
 # --- テーマとカラー設定 ---
-ctk.set_appearance_mode("dark")  # ダークモード設定
-ctk.set_default_color_theme("blue")  # アクセントカラー
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 # カラーパレット定義
-COLOR_BG = "#1A1A1A"            # 背景色
-COLOR_FRAME = "#2B2B2B"         # フレーム背景色
-COLOR_TEXT_MAIN = "#FFFFFF"     # メインテキスト色
-COLOR_TEXT_SUB = "#AAAAAA"      # サブテキスト色
-COLOR_ACCENT_RED = "#FF5555"    # 強調色（赤）
-COLOR_ACCENT_GREEN = "#55FF55"  # 強調色（緑）
+COLOR_BG = "#1A1A1A"
+COLOR_FRAME = "#2B2B2B"
+COLOR_TEXT_MAIN = "#FFFFFF"
+COLOR_TEXT_SUB = "#AAAAAA"
+COLOR_ACCENT_RED = "#FF5555"
+COLOR_ACCENT_GREEN = "#55FF55"
+COLOR_BTN_HOVER = "#444444"
 
-# フォント設定（モダンなフォントを指定）
+# URL定義
+URL_EVENT = "https://www.tokyo-dome.co.jp/dome/event/schedule.html"
+URL_TRAIN = "https://transit.yahoo.co.jp/diainfo/area/4"
+
+# フォント設定
 FONT_MAIN = ("Meiryo UI", 12)
 FONT_TIME = ("Meiryo UI", 100, "bold")
 FONT_DATE = ("Meiryo UI", 24)
@@ -33,11 +39,12 @@ FONT_EVENT_NAME = ("Meiryo UI", 32, "bold")
 FONT_TRAIN_TITLE = ("Meiryo UI", 18, "bold")
 FONT_TRAIN_INFO = ("Meiryo UI", 14)
 FONT_STATUS = ("Meiryo UI", 10)
+FONT_BTN = ("Meiryo UI", 11)
 
 jst = ZoneInfo("Asia/Tokyo")
 current_time = datetime.now(jst)
 
-# グローバル変数の管理
+# グローバル変数
 counter = 0
 status_label = None
 eventdata = []
@@ -48,22 +55,23 @@ datetime_frame_ref = None
 current_event_frame_ref = None
 current_train_scroll_frame_ref = None
 
-# データディレクトリとファイルパスの管理（変更なし）
+# データディレクトリ
 DATA_DIR = "data"
 event_file_path = os.path.join(DATA_DIR, "event_data.json")
 train_file_path = os.path.join(DATA_DIR, "train_data.json")
 
-# 曜日リスト
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
+
+# --- URLを開く関数 ---
+def open_url(url):
+    webbrowser.open(url)
 
 # --- GUIコンポーネント構築関数 ---
 
 def setup_gui_layout():
     """メインウィンドウのグリッドレイアウトを設定"""
-    # 左側（電車情報）:右側（日時・イベント） = 1:2 の比率
     root.grid_columnconfigure(0, weight=1, minsize=400)
     root.grid_columnconfigure(1, weight=2)
-    # 上段（日時）:中段（イベント）:下段（ステータス）
     root.grid_rowconfigure(0, weight=1, minsize=200)
     root.grid_rowconfigure(1, weight=2)
     root.grid_rowconfigure(2, weight=0, minsize=40)
@@ -78,7 +86,6 @@ def create_statusbar():
     status_label = ctk.CTkLabel(status_frame, text=f"ステータス : 起動中...", font=FONT_STATUS, text_color=COLOR_TEXT_SUB)
     status_label.pack(side=tk.LEFT, padx=20)
     
-    # スタイリッシュな終了ボタン
     destroy_button = ctk.CTkButton(status_frame, text="終了", command=root.destroy, 
                                      fg_color=COLOR_ACCENT_RED, hover_color="#CC4444", 
                                      width=80, height=30, font=FONT_STATUS)
@@ -96,7 +103,6 @@ def update_time_and_status_logic():
     w_idx = current_time.weekday()
     date_str = f"{current_time.strftime('%Y.%m.%d')} ({WEEKDAYS[w_idx]})"
     
-    # DateTimeフレーム内のラベルを更新
     if datetime_frame_ref:
         for widget in datetime_frame_ref.winfo_children():
             if isinstance(widget, ctk.CTkLabel):
@@ -114,7 +120,6 @@ def create_datetime_frame():
     datetime_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 20), pady=(20, 10))
     datetime_frame_ref = datetime_frame
 
-    # 初期表示用の日時文字列
     w_idx = current_time.weekday()
     date_str = f"{current_time.strftime('%Y.%m.%d')} ({WEEKDAYS[w_idx]})"
     time_str = current_time.strftime("%H:%M:%S")
@@ -142,16 +147,27 @@ def update_event_ui():
     """イベント情報UIを更新"""
     global eventdata, current_event_frame_ref
     
-    # フレームの再作成（内部のクリアのため）
     if current_event_frame_ref is not None:
         current_event_frame_ref.destroy()
 
-    # 新しいフレームを作成
     event_frame = ctk.CTkFrame(root, corner_radius=15, fg_color=COLOR_FRAME)
     event_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=(10, 20))
     current_event_frame_ref = event_frame
 
-    # 最終更新時刻の取得
+    # --- ヘッダー部分（タイトルとボタン） ---
+    header_frame = ctk.CTkFrame(event_frame, fg_color="transparent")
+    header_frame.pack(fill=tk.X, padx=20, pady=(20, 0))
+
+    title_label = ctk.CTkLabel(header_frame, text="TOKYO DOME EVENT", font=FONT_EVENT_TITLE, text_color=COLOR_TEXT_SUB)
+    title_label.pack(side=tk.LEFT)
+
+    # リンクボタン
+    link_btn = ctk.CTkButton(header_frame, text="公式サイト ↗", width=80, height=24, font=FONT_BTN,
+                             fg_color="transparent", border_width=1, border_color="#555555",
+                             command=lambda: open_url(URL_EVENT))
+    link_btn.pack(side=tk.RIGHT)
+    # ------------------------------------
+
     formatted_event_time = "不明"
     try:
         if os.path.exists(event_file_path):
@@ -161,7 +177,6 @@ def update_event_ui():
     except Exception:
         pass
 
-    # データの解析
     event_kind = "-"
     event_name = "データなし"
     event_time = "-"
@@ -189,14 +204,10 @@ def update_event_ui():
         name_text_color = COLOR_ACCENT_RED
         traceback.print_exc()
     
-    # UIパーツの配置
-    title_label = ctk.CTkLabel(event_frame, text="TOKYO DOME EVENT", font=FONT_EVENT_TITLE, text_color=COLOR_TEXT_SUB)
-    title_label.pack(anchor="nw", padx=20, pady=(20, 0))
-
     kind_label = ctk.CTkLabel(event_frame, text=event_kind, font=("Meiryo UI", 20), text_color=COLOR_ACCENT_GREEN)
     kind_label.pack(anchor="w", padx=20, pady=(10, 0))
 
-    name_label = ctk.CTkLabel(event_frame, text=event_name, font=FONT_EVENT_NAME, text_color=name_text_color, wraplength=600)
+    name_label = ctk.CTkLabel(event_frame, text=event_name, font=FONT_EVENT_NAME, text_color=name_text_color, wraplength=600, justify="left")
     name_label.pack(anchor="w", padx=20, pady=(10, 20))
     
     time_label = ctk.CTkLabel(event_frame, text=f"OPEN/START: {event_time}", font=("Meiryo UI", 18), text_color=COLOR_TEXT_MAIN)
@@ -223,24 +234,40 @@ def update_train_ui():
     """電車運行情報UIを更新"""
     global traindata, current_train_scroll_frame_ref
     
-    # フレームの再作成
     if current_train_scroll_frame_ref is not None:
         current_train_scroll_frame_ref.destroy()
     
-    # 親フレーム（タイトルとスクロールエリアを格納）
     train_parent_frame = ctk.CTkFrame(root, corner_radius=15, fg_color=COLOR_FRAME)
     train_parent_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(20, 10), pady=20)
     
-    # タイトル
-    title_label = ctk.CTkLabel(train_parent_frame, text="首都圏の運行情報", font=FONT_TRAIN_TITLE, text_color=COLOR_TEXT_MAIN)
-    title_label.pack(anchor="nw", padx=20, pady=(20, 10))
+    # --- ヘッダー部分（タイトルとボタン） ---
+    header_frame = ctk.CTkFrame(train_parent_frame, fg_color="transparent")
+    header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
 
-    # スクロール可能なフレームを作成
+    title_label = ctk.CTkLabel(header_frame, text="首都圏の運行情報", font=FONT_TRAIN_TITLE, text_color=COLOR_TEXT_MAIN)
+    title_label.pack(side=tk.LEFT)
+
+    # ボタン群用フレーム
+    btn_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+    btn_frame.pack(side=tk.RIGHT)
+
+    # 更新ボタン（即時スクレイピング実行）
+    refresh_btn = ctk.CTkButton(btn_frame, text="↻ 更新", width=60, height=24, font=FONT_BTN,
+                                fg_color="#444444", hover_color="#555555",
+                                command=lambda: run_train_scraping_thread(manual=True))
+    refresh_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+    # リンクボタン
+    link_btn = ctk.CTkButton(btn_frame, text="Yahoo!路線 ↗", width=80, height=24, font=FONT_BTN,
+                             fg_color="transparent", border_width=1, border_color="#555555",
+                             command=lambda: open_url(URL_TRAIN))
+    link_btn.pack(side=tk.LEFT)
+    # ------------------------------------
+
     scroll_frame = ctk.CTkScrollableFrame(train_parent_frame, corner_radius=10, fg_color="transparent")
     scroll_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-    current_train_scroll_frame_ref = train_parent_frame # 参照を保持するのは親フレーム
+    current_train_scroll_frame_ref = train_parent_frame
 
-    # 最終更新時刻
     formatted_train_time = "不明"
     try:
         if os.path.exists(train_file_path):
@@ -250,17 +277,14 @@ def update_train_ui():
     except Exception:
         pass
 
-    # データ表示
     if traindata:
         for item in traindata:
             line = item.get("路線", "不明")
             status = item.get("状況", "不明")
             detail = item.get("詳細", "")
             
-            # 状況に応じて色を変える（視認性向上）
             status_color = COLOR_ACCENT_RED if "平常" not in status and "不明" not in status else COLOR_TEXT_MAIN
             
-            # 各路線の情報カード
             card = ctk.CTkFrame(scroll_frame, corner_radius=8, fg_color="#333333", border_width=1, border_color="#444444")
             card.pack(fill=tk.X, pady=5, padx=5)
             
@@ -287,23 +311,37 @@ def update_train_ui():
     update_label.pack(side=tk.BOTTOM, anchor="sw", padx=20, pady=15)
 
 
-# --- スレッド処理（変更なし） ---
-# ロジック部分は既存のコードをそのまま流用します
+# --- スレッド処理 ---
 
-def run_train_scraping_thread():
+def run_train_scraping_thread(manual=False):
+    """電車情報のスクレイピングを実行"""
+    if manual:
+        print("手動更新を開始します...")
+    
     try:
         train_troubledata.main()
     except Exception:
         print("電車情報の更新スレッドでエラーが発生しました。")
+    
+    # 処理完了後にGUI更新を予約
     root.after(0, after_train_scraping)
 
 def after_train_scraping():
     read_traindata()
-    update_train_ui() # UI更新関数名を変更
-    root.after(600000, start_train_update_cycle)
+    update_train_ui()
+    # 自動更新サイクルはここではなく start_train_update_cycle で管理
+    # 手動更新の場合でも、自動更新タイマーは別で動いているため干渉しない
+
+def run_train_auto_update_loop():
+    """自動更新ループ用"""
+    run_train_scraping_thread()
+    # 10分後に再実行
+    root.after(600000, run_train_auto_update_loop)
 
 def start_train_update_cycle():
-    scraping_thread = threading.Thread(target=run_train_scraping_thread)
+    """初回起動時とループの開始"""
+    # 最初の実行をスレッドで行う
+    scraping_thread = threading.Thread(target=run_train_auto_update_loop)
     scraping_thread.daemon = True 
     scraping_thread.start()
 
@@ -316,7 +354,7 @@ def run_event_scraping_thread():
 
 def after_event_scraping():
     read_eventdata()
-    update_event_ui() # UI更新関数名を変更
+    update_event_ui()
     root.after(3600000, start_event_update_cycle)
 
 def start_event_update_cycle():
@@ -326,32 +364,24 @@ def start_event_update_cycle():
 
 # --- メイン処理 ---
 
-# ルートウィンドウの作成（tk.Tkの代わりにctk.CTkを使用）
 root = ctk.CTk()
 root.title("Tokyo Dome Info Board")
-# ウィンドウサイズを少し小さく固定して密度感を出す（レイアウト崩れ防止）
 root.geometry("1280x720")
 root.resizable(False, False)
 
-# レイアウト設定
 setup_gui_layout()
 
-# 各UIコンポーネントの作成と配置
 create_statusbar()
 create_datetime_frame()
 
-# 初期データの読み込みと表示
 read_eventdata()
 update_event_ui()
 read_traindata()
 update_train_ui()
 
-# 時計更新の開始
 update_time_and_status_logic()
 
-# バックグラウンド更新の開始
 root.after(1000, start_event_update_cycle)
 root.after(1000, start_train_update_cycle)
 
-# ループ開始
 root.mainloop()
