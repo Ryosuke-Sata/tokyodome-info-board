@@ -79,7 +79,7 @@ pip install pyinstaller
 
 **2. EXEファイルの作成**
 ```sh
-pyinstaller --noconsole --onefile --collect-all customtkinter --collect-all tzdata gui.py
+pyinstaller --noconsole --onefile --collect-all customtkinter --collect-all tzdata --name "TokyoDomeInfoBoard" gui.py
 ```
 コマンド実行後、`dist`フォルダ内に `gui.exe` が生成されます。
 
