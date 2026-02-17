@@ -4,3 +4,4 @@ beautifulsoup4
 selenium
 packaging
 tzdata
+pyinstaller
