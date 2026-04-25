@@ -4,14 +4,16 @@ import webbrowser
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import json
+import sys
 import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import threading
 import traceback
 import datetime as dt
 
 # データ取得モジュールのインポート
-import tokyodome_eventdata
-import train_troubledata
+import core.tokyodome_eventdata as tokyodome_eventdata
+import core.train_troubledata as train_troubledata
 
 # --- テーマとカラー設定 ---
 ctk.set_appearance_mode("dark")
