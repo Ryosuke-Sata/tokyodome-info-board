@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tokyo Dome Info Board</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="main-container">
+        
+        <div class="frame train-section">
+            <div class="header-row">
+                <div class="title">首都圏の運行情報</div>
+                <div class="btn-group">
+                    <button class="btn btn-filled" onclick="location.reload()">↻ 更新</button>
+                    <a href="https://transit.yahoo.co.jp/diainfo/area/4" target="_blank" class="btn btn-outline">Yahoo!路線 ↗</a>
+                </div>
+            </div>
+            
+            <div class="scroll-area">
+                {% if trains %}
+                    {% for item in trains %}
+                        <div class="card">
+                            <div class="train-line">● {{ item.get('路線', '不明') }}</div>
+                            <div class="train-status {% if '平常' not in item.get('状況', '') %}alert{% endif %}">
+                                状況: {{ item.get('状況', '不明') }}
+                            </div>
+                            <div class="train-detail">{{ item.get('詳細', '') }}</div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div style="text-align: center; color: var(--color-text-sub); margin-top: 50px; font-size: clamp(14px, 1.2vw, 20px);">
+                        現在、主要な遅延情報はありません<br>またはデータを取得中です...
+                    </div>
+                {% endif %}
+            </div>
+            <div class="footer-text">最終更新 : {{ train_mtime }}</div>
+        </div>
+
+        <div class="frame datetime-section">
+            <div id="clock">00:00:00</div>
+            <div id="date">0000.00.00 (月)</div>
+        </div>
+
+        <div class="frame event-section">
+            <div class="header-row" style="margin-bottom: 15px;">
+                <div class="title" style="color: var(--color-text-sub);">TOKYO DOME EVENT</div>
+                <a href="https://www.tokyo-dome.co.jp/dome/event/schedule.html" target="_blank" class="btn btn-outline">公式サイト ↗</a>
+            </div>
+            
+            <div class="event-cards">
+                <div class="card event-card">
+                    <div class="event-date-title">{{ today_str }}</div>
+                    {% if events and events|length > today_idx and events[today_idx]|length >= 5 %}
+                        <div class="event-kind">{{ events[today_idx][3] }}</div>
+                        <div class="event-name" style="color: var(--color-text-main);">{{ events[today_idx][4] }}</div>
+                        <div class="event-time">OPEN/START: {{ events[today_idx][5] if events[today_idx]|length >= 6 else '時間情報なし' }}</div>
+                    {% else %}
+                        <div class="event-name" style="color: var(--color-text-sub);">予定はありません</div>
+                    {% endif %}
+                </div>
+
+                <div class="card event-card">
+                    <div class="event-date-title">{{ tomorrow_str }}</div>
+                    {% if events and events|length > tomorrow_idx and events[tomorrow_idx]|length >= 5 %}
+                        <div class="event-kind">{{ events[tomorrow_idx][3] }}</div>
+                        <div class="event-name" style="color: var(--color-text-main);">{{ events[tomorrow_idx][4] }}</div>
+                        <div class="event-time">OPEN/START: {{ events[tomorrow_idx][5] if events[tomorrow_idx]|length >= 6 else '時間情報なし' }}</div>
+                    {% else %}
+                        <div class="event-name" style="color: var(--color-text-sub);">予定はありません</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="footer-text" style="text-align: right;">最終更新 : {{ event_mtime }}</div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div id="status-text">ステータス : 稼働中 (起動からの時間計測中...)</div>
+        <button class="btn btn-exit" onclick="window.close()">終了</button>
+    </div>
+
+    <script>
+        let counter = 0;
+        function updateTime() {
+            const now = new Date();
+            const days = ['日','月','火','水','木','金','土'];
+            
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
+                            now.getMinutes().toString().padStart(2, '0') + ':' +
+                            now.getSeconds().toString().padStart(2, '0');
+            
+            const dateStr = now.getFullYear() + '.' + 
+                            (now.getMonth() + 1).toString().padStart(2, '0') + '.' +
+                            now.getDate().toString().padStart(2, '0') + 
+                            ' (' + days[now.getDay()] + ')';
+
+            document.getElementById('clock').textContent = timeStr;
+            document.getElementById('date').textContent = dateStr;
+
+            counter++;
+            document.getElementById('status-text').textContent = `システム稼働時間 : ${counter} 秒経過`;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+    </script>
+</body>
+</html>
