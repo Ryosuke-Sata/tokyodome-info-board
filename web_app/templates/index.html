@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tokyo Dome Info Board</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -83,9 +84,10 @@
 
     <script>
         let counter = 0;
-        let initialTrainMtime = null; // アプリ起動時のファイルの更新時刻を記憶
-        let isFirstFetchDone = false; // 最新データが取れたかどうかのフラグ
+        let initialTrainMtime = null; 
+        let isFirstFetchDone = false; 
         let dataUpdateTimer;
+        let bootPollCount = 0;
 
         async function updateDataOnly(forceUpdate = false) {
             const updateBtn = document.querySelector('.btn-filled');
@@ -101,7 +103,6 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // --- 修正のキモ①: 起動時に存在していた古いファイルの時刻を記録する ---
                 if (initialTrainMtime === null) {
                     initialTrainMtime = data.train_mtime;
                 }
@@ -131,12 +132,20 @@
                 document.querySelector('.train-section .footer-text').textContent = `最終更新 : ${data.train_mtime}`;
                 document.querySelector('.event-section .footer-text').textContent = `最終更新 : ${data.event_mtime}`;
 
-                // --- 修正のキモ②: 時刻が変化した時だけチェックを完了させる ---
-                if (!isFirstFetchDone && (forceUpdate || data.train_mtime !== initialTrainMtime || (initialTrainMtime === "不明" && data.train_mtime !== "不明"))) {
-                    console.log("新しいデータの取得を確認しました。通常の5分間隔に移行します。");
-                    isFirstFetchDone = true;
-                    clearInterval(dataUpdateTimer);
-                    dataUpdateTimer = setInterval(() => updateDataOnly(false), 300000); // 5分間隔に切り替え
+                if (!isFirstFetchDone && !forceUpdate) {
+                    bootPollCount++;
+                    
+                    let isChanged = (initialTrainMtime === "不明" && data.train_mtime !== "不明") || 
+                                    (initialTrainMtime !== "不明" && data.train_mtime !== initialTrainMtime);
+
+                    if (isChanged || bootPollCount >= 5) {
+                        console.log(isChanged ? "新規データを検知しました。" : "既存データを表示します(リロード判定)。");
+                        console.log("通常の5分間隔に移行します。");
+                        
+                        isFirstFetchDone = true;
+                        clearInterval(dataUpdateTimer);
+                        dataUpdateTimer = setInterval(() => updateDataOnly(false), 300000);
+                    }
                 }
 
             } catch (error) {
@@ -170,10 +179,7 @@
         async function shutdownServer() {
             if (confirm("システムを終了してよろしいですか？\n(裏側のPythonサーバーも停止します)")) {
                 try {
-                    // Pythonの自爆スイッチ（/shutdown）を押す
                     await fetch('/shutdown', { method: 'POST' });
-                    
-                    // 画面を暗くして終了したことを伝える親切なメッセージに切り替え
                     document.body.innerHTML = `
                         <div style="display:flex; justify-content:center; align-items:center; height:100vh; background-color:#1A1A1A; color:#FFF; font-family:'Meiryo UI', sans-serif;">
                             <div style="text-align:center;">
@@ -185,24 +191,21 @@
                             </div>
                         </div>
                     `;
-                    
-                    // ブラウザの仕様で閉じられる場合があるため、一応閉じる命令も出しておく
                     window.close();
-
                 } catch (error) {
-                    console.error("終了処理中にエラーが発生しました:", error);
-                    alert("終了処理に失敗しました。黒い画面（コマンドプロンプト）を「×」で直接閉じてください。");
+                    console.error("終了エラー:", error);
+                    alert("終了処理に失敗しました。黒い画面を直接閉じてください。");
                 }
             }
         }
 
         setInterval(updateTime, 1000);
 
-        // 起動時のタイマー設定（まずは「時刻が変化するまで」3秒おきにチェックし続ける）
+        // 起動時のタイマー設定（3秒おきに見張る）
         dataUpdateTimer = setInterval(() => updateDataOnly(false), 3000);
 
         updateTime();
-        updateDataOnly(false); // 即座に1回目を実行
+        updateDataOnly(false);
     </script>
 </body>
 </html>

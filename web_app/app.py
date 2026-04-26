@@ -108,13 +108,11 @@ def get_data():
 def shutdown():
     print("\n--- 終了信号を受信しました。サーバーをシャットダウンします ---")
     
-    # 即座に自爆するのではなく、0.5秒後に自爆するタイマーをセットする
     def kill_server():
         os.kill(os.getpid(), signal.SIGINT)
         
     threading.Timer(0.5, kill_server).start()
     
-    # タイマーが動いている間に、ブラウザへ「終了するよ」と返事をする
     return jsonify({"status": "shutting down"})
 
 if __name__ == '__main__':
