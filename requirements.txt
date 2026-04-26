@@ -5,3 +5,4 @@ selenium
 packaging
 tzdata
 pyinstaller
+flask

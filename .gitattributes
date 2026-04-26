@@ -1,0 +1,28 @@
+# (1) デフォルトの挙動: すべてのファイルをテキストとして扱い、LFに統一する
+* text=auto eol=lf
+
+# (2) 明示的なテキストファイルの指定（念のため）
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+.gitignore text eol=lf
+
+# (3) Windows専用バッチファイルのみCRLFを許可（もし存在すれば）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# (4) バイナリファイル（絶対に改行コードを変換してはいけないファイル）
+# 今後 static/ フォルダなどに入る画像やフォントが壊れるのを防ぎます
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
